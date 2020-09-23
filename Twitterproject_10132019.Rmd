@@ -1,0 +1,877 @@
+---
+title: "R Pirate Pals Twitter Project"
+author: "Nathan"
+date: "9/11/2019"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+library(powerlmm)
+
+```
+
+```{r}
+
+p <- study_parameters(n1 = 111111,
+                      n2 = 18,
+                      icc_pre_subject = .05,
+                      var_ratio =  .000018,
+                      effect_size = cohend(.4, standardizer = "pretest_SD"))
+
+
+x <- get_power_table(p, n2 = seq(2, 10, by = 1), var_ratio = c(0), effect_size = cohend(c(.06,.1)))
+
+plot(x)
+
+```
+
+
+
+```{r}
+
+library(rtweet)
+library(tidyverse)
+library(tidytext)
+library(igraph)
+library(ggraph)
+library(reshape2)
+library(wordcloud)
+library(devtools)
+library(ggeffects)
+library(SnowballC)
+library(tm)
+library(syuzhet)
+
+library(relativeVariability)
+#library(vader)
+
+source("summarySE.R")
+
+```
+
+#Get the tweets
+
+```{r}
+
+#VLtweets <- get_timeline(c("AlterNet", "democracynow", "thedailybeast", "HuffPost", "theintercept",
+#                           "jacobinmag", "motherJones","MSNBC", "NewYorker", "thenation", "Slate", 
+#                       #    "voxdotcom"), n = 3200)
+
+search_tweets()
+```
+
+```{r}
+
+LLtweets <- get_timeline(c("ABC", "theAtlantic", "buzzfeednews", "CBSNews", "CNN", "TheEconomist",
+                           "guardiannews", "nbcNews", "nytimes", "politico", "TIME", "washingtonpost", 
+                           "AlterNet", "democracynow", "thedailybeast", "HuffPost", "theintercept",
+                           "jacobinmag", "motherJones","MSNBC", "NewYorker", "thenation", "Slate", 
+                           "voxdotcom"), n = 3200)
+
+```
+
+```{r}
+
+#Centertweets <- get_timeline(c("NPR", "AP", "BBCNews", "csmonitor", "reuters", "thehill", "usatoday", "WSJ", "business", "forbes", "Axios", "businessinsider"), n = 3200)
+
+```
+
+```{r}
+
+LCtweets <- get_timeline(c("reason", "dcexaminer", "WashTimes", "Daily_Press", "foxnewsradio", "MarketWatch", "OANN", "amconmag", "TPostMillennial", "BreitbartNews", 
+                           "NRO", "amspectator", "theblaze", "CBNNews", "DailyCaller", "MailOnline", "realDailyWire", "FDRLST", "nypost", "newsmax"), n = 3200)
+
+```
+
+```{r}
+
+#VCtweets <- get_timeline(c("BreitbartNews", "NRO", "amspectator", "theblaze", "CBNNews", "DailyCaller", "MailOnline", "realDailyWire", "FDRLST", "nypost", "newsmax"), n = 3200)
+
+```
+
+#remove https
+
+```{r}
+
+# remove http elements manually
+
+LLtweets$stripped_text <- gsub("http.*","",  LLtweets$text)
+LLtweets$stripped_text <- gsub("https.*","", LLtweets$stripped_text)
+
+
+LCtweets$stripped_text <- gsub("http.*","",  LCtweets$text)
+LCtweets$stripped_text <- gsub("https.*","", LCtweets$stripped_text)
+
+
+```
+
+
+```{r}
+
+clean_Ctweets <- analysisLC %>%
+  dplyr::select(stripped_text) %>%
+  unnest_tokens(word, stripped_text)
+
+clean_Ltweets <- analysisLL %>%
+  dplyr::select(stripped_text) %>%
+  unnest_tokens(word, stripped_text)
+```
+
+```{r}
+
+clean_Ctweets_words <- clean_Ctweets %>%
+  anti_join(stop_words)
+
+clean_Ltweets_words <- clean_Ltweets %>%
+  anti_join(stop_words)
+
+```
+
+```{r}
+
+clean_Ctweets_words %>%
+  count(word, sort = TRUE) %>%
+  top_n(25) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(x = word, y = n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+      labs(y = "Count",
+      x = "Unique words",
+      title = "Count of unique words found in tweets",
+      subtitle = "Stop words removed from the list")
+
+```
+
+```{r}
+
+clean_Ltweets_words %>%
+  count(word, sort = TRUE) %>%
+  top_n(25) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(x = word, y = n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+      labs(y = "Count",
+      x = "Unique words",
+      title = "Count of unique words found in tweets",
+      subtitle = "Stop words removed from the list")
+
+```
+
+```{r}
+
+clean_Ctweets_paired_words <- LCtweets %>% 
+  select(stripped_text) %>%
+  unnest_tokens(paired_words, stripped_text, token ="ngrams", n = 2)
+
+clean_Ctweets_paired_words %>%
+  count(paired_words, sort = TRUE)
+
+clean_Ltweets_paired_words <- LLtweets %>% 
+  select(stripped_text) %>%
+  unnest_tokens(paired_words, stripped_text, token ="ngrams", n = 2)
+
+clean_Ltweets_paired_words %>%
+  count(paired_words, sort = TRUE)
+
+```
+
+
+```{r}
+
+clean_Ctweets_separated_words <- clean_Ctweets_paired_words %>% 
+  separate(paired_words, c("word1", "word2"), sep = " ")
+
+clean_Ctweets_filtered <- clean_Ctweets_separated_words %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word)
+  
+clean_Ctweets_pf_counts <- clean_Ctweets_filtered %>%
+  count(word1, word2, sort = TRUE)
+
+
+clean_Ltweets_separated_words <- clean_Ltweets_paired_words %>%
+  separate(paired_words, c("word1", "word2"), sep = " ")
+
+clean_Ltweets_filtered <- clean_Ltweets_separated_words %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word)
+
+clean_Ltweets_pf_counts <- clean_Ltweets_filtered %>%
+  count(word1, word2, sort = TRUE)
+
+```
+
+
+```{r}
+
+clean_Ctweets_pf_counts %>%
+        filter(n >= 40) %>%
+        graph_from_data_frame() %>%
+        ggraph(layout = "fr") +
+        # geom_edge_link(aes(edge_alpha = n, edge_width = n))
+        # geom_edge_link(aes(edge_alpha = n, edge_width = n)) +
+        geom_node_point(color = "darkslategray4", size = 3) +
+        geom_node_text(aes(label = name), vjust = 1.8, size = 3) +
+        labs(title = "Word Network: Tweets of Conservative News",
+             subtitle = "Text mining twitter data ",
+             x = "", y = "")
+
+```
+
+
+```{r}
+
+clean_Ltweets_pf_counts %>%
+        filter(n >= 40) %>%
+        graph_from_data_frame() %>%
+        ggraph(layout = "fr") +
+        # geom_edge_link(aes(edge_alpha = n, edge_width = n))
+        # geom_edge_link(aes(edge_alpha = n, edge_width = n)) +
+        geom_node_point(color = "darkslategray4", size = 3) +
+        geom_node_text(aes(label = name), vjust = 1.8, size = 3) +
+        labs(title = "Word Network: Tweets of Liberal News",
+             subtitle = "Text mining twitter data ",
+             x = "", y = "")
+
+```
+
+
+
+```{r}
+
+clean_Ctweets_words %>%
+  count(word,sort = T) %>%
+  with( wordcloud(word, n, max.word=100))
+
+
+clean_Ltweets_words %>%
+  count(word,sort = T) %>%
+  with( wordcloud(word, n, max.word=100))
+
+LCtweet_words <- bind_rows(
+  mutate(
+    clean_Ctweets_words, Orientation="Right"
+    ),
+  mutate(
+    clean_Ltweets_words, Orientation="Left"
+  )
+)
+```
+
+## Sentiment analysis
+
+```{r}
+
+
+LLtweets %>%
+  select(stripped_text, screen_name, favorite_count, retweet_count, followers_count, display_text_width, created_at, is_retweet) -> Str_LLtweets
+
+Str_LLtweets %>%
+  select(stripped_text) -> left_text
+
+write_csv(left_text, "left_text.csv")
+
+LCtweets %>%
+  select(stripped_text, screen_name, favorite_count, retweet_count, followers_count, display_text_width, created_at, is_retweet) -> Str_LCtweets
+
+Str_LCtweets %>%
+  select(stripped_text) -> right_text
+
+write_csv(right_text, "right_text.csv")
+
+```
+
+```{r}
+
+
+word.LL <- as.vector(Str_LLtweets$stripped_text)
+
+word.LC <- as.vector(Str_LCtweets$stripped_text)
+
+
+```
+
+```{r}
+
+emoitonLL <- get_nrc_sentiment(word.LL)
+
+
+emotionLC <- get_nrc_sentiment(word.LC)
+
+```
+
+```{r}
+
+
+sentLL <- cbind(Str_LLtweets, emoitonLL)
+
+sentLL %>%
+  mutate(num = row_number()) -> sentLL
+
+sentLC <- cbind(Str_LCtweets, emotionLC)
+
+sentLC %>%
+  mutate(num = row_number()) -> sentLC
+
+```
+
+```{r}
+
+ALLTs <- bind_rows(
+  mutate(
+     sentLL, Orientation="LL"
+    ),
+  mutate(
+    sentLC, Orientation="LC"
+  )
+)
+
+write_csv(ALLTs, "L_R_tweettext_429.csv")
+```
+
+```{r}
+
+#syuhzuet sentiment data
+ALLTs <- read_csv("L_R_tweettext_429.csv")
+
+vader <- read_csv("vader.csv")
+
+```
+
+```{r}
+
+ALLTs %>%
+  mutate(sent_value = get_sentiment(stripped_text)) -> ALLTs2
+
+```
+
+```{r}
+
+max(ALLTs2$sent_value)
+min(ALLTs2$sent_value)
+
+mean(ALLTs2$sent_value)
+sd(ALLTs2$sent_value)
+```
+
+```{r}
+
+ALLTs2 %>%
+  group_by(Orientation) %>%
+  mutate(pos_ave = mean(positive)) %>%
+  mutate(pos_var = relativeSD(positive, 0, 9)) %>%
+  mutate(neg_ave = mean(negative)) %>%
+  mutate(neg_var = relativeSD(negative, 0, 9)) %>%
+  mutate(affect = positive - negative) %>%
+  ungroup() %>%
+  mutate(interactions = retweet_count + favorite_count) -> Sent_media
+
+
+Sent_media$Orientation <- as.factor(Sent_media$Orientation)
+```
+
+```{r}
+
+sumdat_p <- summarySE(Sent_media, "positive", groupvars = c("screen_name", "Orientation"))
+sumdat_n <- summarySE(Sent_media, "negative", groupvars = c("screen_name", "Orientation"))
+
+sumdat_p %>%
+  ggplot() + 
+  geom_bar(aes(x = screen_name, y = positive_mean, fill = Orientation), stat = "identity") +
+  geom_errorbar(aes(x = screen_name, y = positive_mean, group = screen_name, ymin = positive_mean-se, ymax = positive_mean+se), color = "black", width = .05)
+
+
+sumdat_n %>%
+  ggplot() + 
+  geom_bar(aes(x = screen_name, y = negative_mean, fill = Orientation), stat = "identity") +
+  geom_errorbar(aes(x = screen_name, y = negative_mean, group = screen_name, ymin = negative_mean-se, ymax = negative_mean+se), color = "black", width = .05)
+
+```
+
+```{r}
+
+library(lmerTest)
+
+```
+
+```{r}
+
+library(lme4)
+
+```
+
+```{r}
+
+library(sjPlot)
+
+library(multilevel)
+library(sjmisc)
+library(MuMIn)
+library(arm)
+
+library(ggstatsplot)
+
+```
+
+```{r}
+
+Sent_mediaO <- read_csv("NewsOrgdata10142019.csv")
+senti <- read_csv("result2.csv")
+Sent_media2 <- read_csv("NewsOrgdata10142019_vadardata.csv")
+
+```
+
+
+
+```{r}
+
+#VADER 
+
+```
+
+```{r}
+
+write.csv(Sent_media, file = "NewsOrgdata10142019.csv")
+
+```
+
+```{r}
+
+tweetdata <- read_csv("NewsTwitterData.csv")
+
+```
+
+```{r}
+
+Sent_media$screen_name <- as.factor(Sent_media$screen_name)
+
+Sent_mediaO %>%
+  ungroup() %>%
+  filter(stripped_text != ".") %>%
+  filter(stripped_text != "") %>%
+  filter(stripped_text != "NA") %>%
+  filter(stripped_text != ",") -> Sent_media2
+
+Sent_media2$screen_name <- as.factor(Sent_media2$screen_name)
+
+Sent_media2 %>%
+  mutate(pos_c = positive - pos_ave,
+         neg_c = negative - neg_ave) -> Sent_media2 
+```
+
+
+```{r}
+write_csv(Sent_media2, "saved_text.csv")
+
+Sent_media2 <- read_csv("saved_text.csv")
+
+Sent_media2 %>%
+  select(stripped_text) -> text
+write_csv(text, "text.csv")
+
+Sent_media2 %>%
+  mutate(sent_vader = vader$compound,
+         pos_vader = vader$pos,
+         neg_vader = vader$neg) -> Sent_media2 
+
+Sent_media2 -> analysis
+```
+
+```{r}
+
+analysis %>%
+  mutate(followers_countS = scale(followers_count)) %>%
+  mutate(display_text_widthS = scale(display_text_width),
+         log_int = log10(interactions + 1)) -> analysis
+
+analysis %>%
+  filter(complete.cases(.)) -> analysis
+
+analysis$Orientation <- as.factor(analysis$Orientation)
+```
+
+```{r}
+library(splitstackshape)
+
+analysis %>%
+  ungroup() %>%
+  mutate(rand_id = runif(140358, min = 0, max = 1)) %>%
+  mutate(split_id = ifelse(rand_id >.5, 1, 0))-> analysisG
+
+analysisG %>%
+  filter(Orientation != "LC") ->analysisLL
+
+analysisG %>%
+  filter(Orientation != "LL") ->analysisLC
+
+analysisG %>%
+  filter(split_id == 1) -> split1
+
+write_csv(split1, "split1.csv")
+
+split1 <- read_csv("split1.csv")
+
+analysisG %>%
+  filter(split_id == 0) -> split0
+
+write_csv(split0, "split0.csv")
+
+split0 <- read_csv("split0.csv")
+```
+
+
+```{r}
+split0 %>%
+  group_by(screen_name) %>%
+  dplyr::summarise(n = n())
+
+analysisG %>%
+  mutate(sent_vader2 = (sent_vader)^2) ->analysisG
+
+analysis %>%
+  mutate(sent_vaderc = sent_vader - mean(sent_vader),
+        vaderc2 = sent_vaderc^2,
+        posc = positive - mean(positive),
+        posc2 = posc^2,
+        negc = negative - mean(negative),
+        negc2 = negc^2,
+        log_int = log10(interactions + 1)) -> analysis
+
+analysis %>%
+  mutate(split_id = analysisG$split_id) -> analysis
+
+analysis %>%
+  filter(Orientation != "LC") ->analysisLL
+
+analysis %>%
+  filter(Orientation != "LL") ->analysisLC
+
+analysis %>%
+  filter(split_id == 1) -> split1
+
+
+analysis %>%
+  filter(split_id == 0) -> split0
+
+cor <- lme(negative ~ neg_vader, random =~ 1|screen_name, data = analysis)
+summary(cor)
+
+cor.test(analysis$negative, analysis$neg_vader)
+
+```
+
+```{r}
+analysis %>%
+  gather(valence_type, affect, positive, negative) -> analysis_long
+```
+
+```{r}
+ggstatsplot::grouped_ggwithinstats(
+  data = analysis_long %>%
+    dplyr::group_by(screen_name, Orientation, valence_type) %>%
+    dplyr::summarise(affect = mean(affect), sd = sd(affect)),
+  x = valence_type,
+  y = affect,
+  grouping.var = Orientation,
+  xlab = "Valence Type", # label for the x-axis variable
+  ylab = "Affect", # label for the y-axis variable
+  title = "",
+  results.subtitle = TRUE,
+  point.path = FALSE)
+
+mod <- aov(negative ~ Orientation, data = mean_test)
+summary(mod)
+
+analysis_long %>%
+  dplyr::group_by(Orientation, valence_type) %>%
+  dplyr::summarise(mean = mean(affect), sd = sd(affect))
+
+summz <- summarySE(analysis_long, measurevar = "affect", groupvars = c("Orientation", "valence_type"))
+
+summz %>%
+  mutate(valence = valence_type) -> summz
+
+summz %>%
+  ggplot() +
+  geom_bar(aes(x = valence, y = affect_mean, fill = Orientation), stat = "identity", position = "dodge")  +
+  geom_errorbar(aes(x = valence, y = affect_mean, group = Orientation, 
+         ymin = affect_mean-se, 
+         ymax = affect_mean+se),position = position_dodge(.9), colour = "Black", width = .35, size = .7) +
+  xlab("Valence") +
+  ylab("Affect") +
+  scale_fill_manual(values = c("blue", "red"),name= "Orientation") +
+  theme_bw()
+
+t.test(analysis$negative ~ analysis$Orientation)
+```
+
+#USE THIS ONE
+```{r}
+analysis %>%
+  mutate(Orientation = ifelse(Orientation == "LC", "Right", "Left")) ->analysis
+
+LL3e <- lmer(log_int ~ pos_vader * Orientation + neg_vader * Orientation + display_text_widthS + followers_countS + (1|screen_name), data = analysis, REML = FALSE)
+
+summary(LL3e)
+
+LL3 <- lme(log_int ~ pos_vader + neg_vader + display_text_widthS + followers_countS, random =~ 1|screen_name, data = analysisLL)
+summary(LL3)
+
+plot_model(LL3e, type = "pred", terms = c("negative", "Orientation"), colors = c("blue", "red")) +
+  xlab("Negativity") +
+  ylab("Interactions (log scaled)") + 
+  theme_bw()
+
+plot_model(LL3e, type = "pred", terms = c("positive", "Orientation"), colors = c("blue", "red")) +
+  xlab("Positivty") +
+  ylab("Interactions (log scaled)") + 
+  theme_bw()
+
+cohens_f(LL3e, ci = .95, partial = TRUE)
+
+LC3 <- lme(log_int ~ pos_vader + neg_vader + display_text_widthS + followers_countS, random =~ 1|screen_name, data = analysisLC)
+summary(LC3)
+
+plot_model(LC3)
+```
+
+```{r}
+neg <- lme(log_int ~ negc * Orientation + negc2 * Orientation + display_text_widthS + followers_countS, random =~ 1|screen_name, data = analysis)
+
+summary(neg)
+
+plot_model(neg, type = "int")
+
+LL3 <- lme(log_int ~ negc + negc2 + display_text_widthS + followers_countS + favorite_count, random =~ 1|screen_name, data = analysisLL)
+summary(LL3)
+
+plot_model(LL3, type = "pred", terms = c("negc"))
+
+LC3 <- lme(log_int ~ negc + negc2 + display_text_widthS + followers_countS + favorite_count, random =~ 1|screen_name, data = analysisLC)
+summary(LC3)
+
+plot_model(LC3)
+```
+
+
+
+```{r}
+library(effectsize)
+library(reghelper)
+library(nlme)
+
+modelp <- lme(negative ~ Orientation, random =~ 1|screen_name, data = analysis)
+
+model1 <- lme(interactions ~  positive * Orientation + display_text_widthS + followers_countS, random =~ 1|screen_name, data = analysis)
+
+summary(modelp)
+summary(model1)
+
+eta_squared(model1, ci = .95)
+
+plot_model(modelp, type = "pred")
+
+split1 %>%
+  filter(Orientation != "LC") -> analysisLL
+
+model1LL <- lme(interactions ~  positive + display_text_widthS + followers_countS, random =~ 1|screen_name, data = analysisLL)
+summary(model1LL)
+
+split1 %>%
+  filter(Orientation != "LL") -> analysisLC
+
+model1LC <- lme(interactions ~  positive + display_text_widthS + followers_countS, random =~ 1|screen_name, data = analysisLC)
+summary(model1LC)
+
+```
+
+```{r}
+modeln <- lme(negative ~ Orientation + display_text_widthS + followers_countS, random =~ 1|screen_name, data = split1)
+
+model2 <- lme(interactions ~  negative * Orientation + display_text_widthS + followers_countS, random =~ 1|screen_name, data = analysis)
+
+summary(modeln)
+summary(model2)
+
+eta_squared(model2, ci = .95)
+
+plot_model(model2, type = "pred")
+
+split1 %>%
+  filter(Orientation != "LC") -> analysisLL
+
+model2LL <- lme(interactions ~  negative + display_text_widthS + followers_countS, random =~ 1|screen_name, data = analysisLL)
+summary(model2LL)
+
+split1 %>%
+  filter(Orientation != "LL") -> analysisLC
+
+model2LC <- lme(interactions ~  negative + display_text_widthS + followers_countS, random =~ 1|screen_name, data = analysisLC)
+summary(model2LC)
+```
+
+```{r}
+modelp0 <- lme(positive ~ Orientation + display_text_widthS + followers_countS, random =~ 1|screen_name, data = split0)
+
+model10 <- lme(interactions ~  positive * Orientation + display_text_widthS + followers_countS, random =~ 1|screen_name, data = split0)
+
+summary(modelp0)
+summary(model10)
+
+eta_squared(model10, ci = .95)
+
+plot_model(model10, type = "int")
+
+split0 %>%
+  filter(Orientation != "LC") -> analysisLL0
+
+model1LL0 <- lme(interactions ~  positive + display_text_widthS + followers_countS, random =~ 1|screen_name, data = analysisLL0)
+summary(model1LL0)
+
+split0 %>%
+  filter(Orientation != "LL") -> analysisLC0
+
+model1LC0 <- lme(interactions ~  positive + display_text_widthS + followers_countS, random =~ 1|screen_name, data = analysisLC0)
+summary(model1LC0)
+```
+
+```{r}
+modeln0 <- lme(neg_vader ~ Orientation + display_text_widthS + followers_countS, random =~ 1|screen_name, data = split0)
+
+model20 <- lme(interactions ~  neg_vader * Orientation + display_text_widthS + followers_countS, random =~ 1|screen_name, data = split0)
+
+summary(modeln0)
+summary(model20)
+
+eta_squared(model20, ci = .95)
+
+
+means <- summarySE(split0, "negative", groupvars = c("Orientation"))
+
+means %>%
+  ggplot() +
+  geom_bar(aes(x = Orientation, y = negative_mean), stat = "identity")
+
+plot_model(model20, type = "int")
+
+split0 %>%
+  filter(Orientation != "LC") -> analysisLL0
+
+model2LL0 <- lme(interactions ~  negative + display_text_widthS + followers_countS, random =~ 1|screen_name, data = analysisLL0)
+summary(model2LL0)
+
+split0 %>%
+  filter(Orientation != "LL") -> analysisLC0
+
+model2LC0 <- lme(interactions ~  negative + display_text_widthS + followers_countS, random =~ 1|screen_name, data = analysisLC0)
+summary(model2LC0)
+```
+
+```{r}
+library(colorspace)
+library(lsa)
+library(nFactors)
+
+analysisG %>%
+  dplyr::select(anger, anticipation, disgust, fear, joy, sadness, surprise, trust, negative, positive) -> cluster_data
+```
+
+```{r}
+scores_a <- scale(cluster_data)
+
+```
+
+
+##  Calculate a distance matrix
+```{r}
+# To choose a distance matrix calculation put one of the following in the - method = "   "  - section.
+# euclidean = euclidean distance
+# manhattan = city block
+
+set.seed(123)
+gc()
+score_distances <- dist(scores_a,method="euclidean")
+
+
+```
+
+##  Run the cluster analysis
+```{r}
+# To choose a clustering method, place your chosen method in 'method = "ward.D'
+# single linkage: method = "single"
+# complete linkage: method = "complete"
+# average linkage: method = "average" (= UPGMA)
+# Ward's method: method = "ward.D"
+appraisal_cluster <- hclust(appraisal_distances,method = "ward.D")
+
+
+
+```
+
+##  Determine number of clusters with parallel analysis
+```{r}
+# Get eigenvalues
+ev_a <- eigen(cor(scores_a))
+
+# Run parallel analysis 100 times, get output
+ap_a <- parallel(subject=nrow(scores_a),var=ncol(scores_a),rep=100,cent=.05)
+
+```
+
+##  View the results of the parallel analysis
+```{r}
+nS_a <- nScree(x=ev_a$values,aparallel=ap_a$eigen$qevpea)
+plotnScree(nS_a)
+
+
+```
+
+
+##  Plot the dendogram
+```{r}
+plot(appraisal_cluster, hang = -1)
+cluster_colors <- rev(rainbow_hcl(2))
+rect.hclust(appraisal_cluster, k = 4, border = cluster_colors)
+```
+
+
+##  Assign to clusters
+```{r}
+#appraisal profiles
+cluster_assignments_a <- cutree(appraisal_cluster, 4)
+
+analysis %>%
+  mutate(appraisal_profile = cluster_assignments_a) -> analysis
+
+analysis$appraisal_profile <- as.factor(analysis$appraisal_profile)
+
+```
+
+##  Cluster the characteristics
+```{r}
+characteristic_distances_a <- dist(t(scores_a),method="euclidean")
+characteristic_cluster_a <- hclust(characteristic_distances_a,method = "ward.D")
+plot(characteristic_cluster_a,hang=-1)
+cluster_colors <- rev(rainbow_hcl(2))
+rect.hclust(characteristic_cluster_a, k = 6, border = cluster_colors)
+```
+
+
+##  Create a heatmap
+```{r}
+library(gplots)
+
+heatmap.2(as.matrix(scores_a),Rowv = as.dendrogram(appraisal_cluster),Colv = as.dendrogram(characteristic_cluster_a),trace="none",cexCol=.5,cexRow=.5)
+
+```
+
+

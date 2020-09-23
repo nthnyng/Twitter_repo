@@ -1,0 +1,272 @@
+---
+title: "Twitter Clusters"
+author: "Ande"
+date: "10/23/2019"
+output: word_document
+---
+
+```{r}
+library(stats)
+library(factoextra)
+library(cluster)
+library(ggplot2)
+library(NbClust)
+
+
+data <- read.csv("NewsOrgdata10142019.csv",header=T)
+
+```
+
+KMEANS
+
+```{r}
+data1 <- data.frame(data$anger, data$anticipation, data$disgust,	data$fear,	data$joy,	data$sadness,	data$surprise, data$trust, data$negative, data$positive)
+
+
+fviz_nbclust(data1, kmeans, method = "gap_stat",k.max=6)
+#nb <- NbClust(data1,min.nc = 2, max.nc = 9, method = "kmeans", index = "all") #only use 'all' for a general idea, use more specific ones based on your needs
+#fviz_nbclust(nb)
+```
+
+
+```{r}
+# K-Means Clustering with 5 clusters
+fit <- kmeans(data1, 3)
+
+# Cluster Plot against 1st 2 principal components
+
+# vary parameters for most readable graph
+library(cluster) 
+Plot<- clusplot(data1, fit$cluster, color=TRUE, shade=TRUE, 
+         labels=4, lines=0)
+
+# Centroid Plot against 1st 2 discriminant functions
+library(fpc)
+ColorPlot <- plotcluster(data, fit$cluster) 
+
+```
+
+
+```{r}
+#Examine the Centroids
+fit$centers
+
+#Assign people to clusters
+cluster_assignments <- data.frame(fit$cluster)
+cluster_assignments
+
+#bind clusters to data set
+DataClust <- cbind(cluster_assignments, data)
+
+write.csv(DataClust, file = "TwitterDataCluster.csv")
+
+```
+
+
+```{r}
+##cluster 2 = neutral
+library(tidyverse)
+
+Twit <- read.csv("TwitterDataCluster.csv",header=T)
+
+Twit %>%
+  filter(fit.cluster!="3") %>%
+  filter(fit.cluster!="4") -> Twit12
+
+Twit %>%
+  filter(fit.cluster!="1") %>%
+  filter(fit.cluster!="4") -> Twit23
+
+Twit %>%
+  filter(fit.cluster!="2") %>%
+  filter(fit.cluster!="4") -> Twit13
+
+Twit %>%
+  filter(fit.cluster!="1") %>%
+  filter(fit.cluster!="3") -> Twit24
+
+Twit %>%
+  filter(fit.cluster!="2") %>%
+  filter(fit.cluster!="3") -> Twit14
+
+Twit %>%
+  filter(fit.cluster!="1") %>%
+  filter(fit.cluster!="2") -> Twit34
+
+
+
+```
+
+multi models
+```{r}
+library(lme4)
+Twit$fit.cluster <- as.factor(Twit$fit.cluster)
+Twit12$fit.cluster <- as.factor(Twit12$fit.cluster)
+Twit23$fit.cluster <- as.factor(Twit23$fit.cluster)
+Twit13$fit.cluster <- as.factor(Twit13$fit.cluster)
+Twit24$fit.cluster <- as.factor(Twit24$fit.cluster)
+Twit14$fit.cluster <- as.factor(Twit14$fit.cluster)
+Twit34$fit.cluster <- as.factor(Twit34$fit.cluster)
+
+model12 <- glmer(fit.cluster ~ Orientation + (1|screen_name), data=Twit12, family = "binomial", control = glmerControl(optimizer = "bobyqa"), nAGW = 10)
+summary(model12)
+
+model23 <- glmer(fit.cluster ~ Orientation + (1|screen_name), data=Twit23, family = "binomial", control = glmerControl(optimizer = "bobyqa"), nAGW = 10)
+summary(model23)
+
+model13 <- glmer(fit.cluster ~ Orientation + (1|screen_name), data=Twit13, family = "binomial", control = glmerControl(optimizer = "bobyqa"), nAGW = 10)
+summary(model13)
+
+model24 <- glmer(fit.cluster ~ Orientation + (1|screen_name), data=Twit24, family = "binomial", control = glmerControl(optimizer = "bobyqa"), nAGW = 10)
+summary(model24)
+
+model14 <- glmer(fit.cluster ~ Orientation + (1|screen_name), data=Twit14, family = "binomial", control = glmerControl(optimizer = "bobyqa"), nAGW = 10)
+summary(model14)
+
+model34 <- glmer(fit.cluster ~ Orientation + (1|screen_name), data=Twit34, family = "binomial", control = glmerControl(optimizer = "bobyqa"), nAGW = 10)
+summary(model34)
+```
+
+
+graphs
+```{r}
+library(tidyr)
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+Twit12$fit.cluster <- as.numeric(Twit12$fit.cluster)
+Twit23$fit.cluster <- as.numeric(Twit23$fit.cluster)
+Twit13$fit.cluster <- as.numeric(Twit13$fit.cluster)
+Twit24$fit.cluster <- as.numeric(Twit24$fit.cluster)
+Twit14$fit.cluster <- as.numeric(Twit14$fit.cluster)
+Twit34$fit.cluster <- as.numeric(Twit34$fit.cluster)
+Twit$fit.cluster <- as.numeric(Twit$fit.cluster)
+
+Twit %>%
+  filter(fit.cluster==1) %>%
+  group_by(Orientation) %>%
+  mutate(total1s = sum(fit.cluster)) -> Twit1
+
+Twit %>%
+  filter(fit.cluster==2) %>%
+  group_by(Orientation) %>%
+  mutate(total1s = sum(fit.cluster)) -> Twit2
+
+Twit %>%
+  filter(fit.cluster==3) %>%
+  group_by(Orientation) %>%
+  mutate(total1s = sum(fit.cluster)) -> Twit3
+
+Twit %>%
+  filter(fit.cluster==4) %>%
+  group_by(Orientation) %>%
+  mutate(total1s = sum(fit.cluster)) -> Twit4
+
+Tweets <- bind_rows(
+  mutate(
+    Twit1, ClustEmo= "Positive"),
+  mutate(
+    Twit2, ClustEmo= "Neutral" ),
+  mutate(
+    Twit3, ClustEmo= "Negative"),
+  mutate(
+    Twit4, ClustEmo= "Extremely Negative")
+)
+```
+
+```{r}
+
+
+##Graphing
+Twit12 %>%
+  group_by(Orientation) %>%
+  mutate(prop12 = mean(fit.cluster)) -> Twit12
+
+Twit12 %>%
+  select(Orientation, prop12)%>%
+  unique() %>%
+  ggplot(aes(x = prop12, y = Orientation)) +
+  geom_point()
+
+
+Twit23 %>%
+  group_by(Orientation) %>%
+  mutate(prop23 = mean(fit.cluster)) -> Twit23
+
+Twit23 %>%
+  select(Orientation, prop23)%>%
+  unique() %>%
+  ggplot(aes(x = prop23, y = Orientation)) +
+  geom_point()
+
+
+Twit13 %>%
+  group_by(Orientation) %>%
+  mutate(prop13 = mean(fit.cluster)) -> Twit13
+
+Twit13 %>%
+  select(Orientation, prop13)%>%
+  unique() %>%
+  ggplot(aes(x = prop13, y = Orientation)) +
+  geom_point()
+
+
+Twit24 %>%
+  group_by(Orientation) %>%
+  mutate(prop24 = mean(fit.cluster)) -> Twit24
+
+Twit24 %>%
+  select(Orientation, prop24)%>%
+  unique() %>%
+  ggplot(aes(x = prop24, y = Orientation)) +
+  geom_point()
+
+
+Twit14 %>%
+  group_by(Orientation) %>%
+  mutate(prop14 = mean(fit.cluster)) -> Twit14
+
+Twit14 %>%
+  select(Orientation, prop14)%>%
+  unique() %>%
+  ggplot(aes(x = prop14, y = Orientation)) +
+  geom_point()
+
+
+Twit34 %>%
+  group_by(Orientation) %>%
+  mutate(prop34 = mean(fit.cluster)) -> Twit34
+
+Twit34 %>%
+  select(Orientation, prop34)%>%
+  unique() %>%
+  ggplot(aes(x = prop34, y = Orientation)) +
+  geom_point()
+```
+
+#fit clusters predicting
+```{r}
+#relevel
+Tweets$ClustEmo <- as.factor(Tweets$ClustEmo)
+Tweets$ClustEmo = relevel(Tweets$ClustEmo, "Neutral")
+class(Tweets$ClustEmo)
+
+#fit cluster predicting interactions
+Tweets$fit.cluster <- as.factor(Tweets$fit.cluster)
+Model1 <- lmer(interactions ~ ClustEmo + display_text_width + Orientation + (1|screen_name), data=Tweets, REML=FALSE)
+summary(Model1)
+
+Model2 <- lmer(interactions ~ ClustEmo*Orientation + display_text_width + (1|screen_name), data=Tweets, REML=FALSE)
+summary(Model2)
+
+
+```
+
+```{r}
+library(sjPlot)
+
+plot_model(Model2, type = "pred", terms = c("ClustEmo", "Orientation"), mdrt.values = "meansd")
+
+```

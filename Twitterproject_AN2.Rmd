@@ -1,0 +1,267 @@
+---
+title: "R Pirate Pals Twitter Project"
+author: "Nathan"
+date: "9/11/2019"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+library(rtweet)
+library(tidyverse)
+library(tidytext)
+library(igraph)
+library(ggraph)
+library(reshape2)
+library(wordcloud)
+
+library(SnowballC)
+library(tm)
+library(syuzhet)
+
+library(relativeVariability)
+
+```
+
+
+#Get the data
+
+```{r}
+
+FRtweets <- get_timeline(c("BreitbartNews", "FoxNews", "NRO"), n = 3200)
+
+Libtweets <- get_timeline(c("HuffPost", "MSNBC", "OccupyDemocrats"), n = 3200)
+
+```
+
+
+#remove https
+
+```{r}
+
+# remove http elements manually
+FRtweets$stripped_text <- gsub("http.*","",  FRtweets$text)
+FRtweets$stripped_text <- gsub("https.*","", FRtweets$stripped_text)
+FRtweets$stripped_text <- gsub("#.*","", FRtweets$stripped_text)
+FRtweets$stripped_text <- gsub("@.*","", FRtweets$stripped_text)
+
+Libtweets$stripped_text <- gsub("http.*","",  Libtweets$text)
+Libtweets$stripped_text <- gsub("https.*","", Libtweets$stripped_text)
+Libtweets$stripped_text <- gsub("#.*","", Libtweets$stripped_text)
+Libtweets$stripped_text <- gsub("@.*","", Libtweets$stripped_text)
+
+```
+
+sentiment analysis
+
+```{r}
+
+Libtweets %>%
+  select(stripped_text, screen_name, favorite_count, retweet_count, followers_count, display_text_width, created_at) -> Str_Libtweets
+
+FRtweets %>%
+  select(stripped_text, screen_name, favorite_count, retweet_count, followers_count, display_text_width, created_at) -> Str_FRtweets
+
+```
+
+```{r}
+
+word.Lib <- as.vector(Str_Libtweets$stripped_text)
+
+word.FR <- as.vector(Str_FRtweets$stripped_text)
+
+```
+
+```{r}
+
+emotionLib <- get_nrc_sentiment(word.Lib)
+
+emoitonFR <- get_nrc_sentiment(word.FR)
+
+
+```
+
+```{r}
+
+
+emotionLib2 <- cbind(Str_Libtweets, emotionLib)
+
+emotionLib2 %>%
+  mutate(num = row_number()) -> emotionLib2
+
+emotionFR2 <- cbind(Str_FRtweets, emoitonFR)
+
+emotionFR2 %>%
+  mutate(num = row_number()) -> emotionFR2
+```
+
+```{r}
+
+SOUs <- bind_rows(
+  mutate(
+    emotionFR2, Orientation="Right"
+    ),
+  mutate(
+    emotionLib2, Orientation="Left"
+  )
+)
+
+```
+
+```{r}
+
+SOUs %>%
+  mutate(sent_value = get_sentiment(stripped_text)) -> SOUs
+
+```
+
+```{r}
+
+SOUs %>%
+  group_by(Orientation) %>%
+  mutate(pos_ave = mean(positive)) %>%
+  mutate(pos_var = relativeSD(positive, 0, 9)) %>%
+  mutate(neg_ave = mean(negative)) %>%
+  mutate(neg_var = relativeSD(negative, 0, 9)) %>%
+  ungroup() %>%
+  mutate(interactions = retweet_count + favorite_count) -> Sent_media
+
+
+Sent_media$Orientation <- as.factor(Sent_media$Orientation)
+```
+
+
+```{r}
+
+library(lme4)
+library(sjPlot)
+
+```
+
+```{r}
+
+write.csv(Sent_media, file = "NewsOrgdata10142019.csv")
+
+```
+
+```{r}
+
+Sent_media <- read_csv("NewsOrgdata10142019.csv")
+
+```
+
+```{r}
+Sent_media %>%
+  mutate(affect = positive + negative) %>%
+  filter(affect != 0) %>%
+  group_by(Orientation) %>%
+  mutate(sentiment_ave = mean(sent_value)) %>%
+  mutate(sentiment_var = relativeSD(sent_value, -7.15, 7.4)) %>%
+  mutate(pos_ave = mean(positive)) %>%
+  mutate(pos_var = relativeSD(positive, 0, 9)) %>%
+  mutate(neg_ave = mean(negative)) %>%
+  mutate(neg_var = relativeSD(negative, 0, 9)) %>%
+  ungroup() -> Sent_media
+
+```
+
+```{r}
+
+Sent_media %>%
+  filter(stripped_text != ".") %>%
+  filter(stripped_text != "") %>%
+  filter(stripped_text != "NA")  -> analysis
+
+
+
+```
+
+```{r}
+
+analysis %>%
+  group_by(screen_name) %>%
+  mutate(posM = mean(positive)) %>%
+  mutate(pos_c = positive - posM) %>%
+  mutate(negM = mean(negative)) %>%
+  mutate(neg_c = negative - negM) %>%
+  mutate(angM = mean(anger)) %>%
+  mutate(ang_c = anger - angM) %>%
+  ungroup %>%
+  mutate(followers_countS = scale(followers_count)) %>%
+  mutate(display_text_widthS = scale(display_text_width))-> analysis
+
+```
+
+```{r}
+library(lmerTest)
+
+modela <- lmer(anger ~ Orientation + display_text_widthS + followers_countS + (1|screen_name), data = analysis, REML = FALSE)
+summary(modela)
+
+
+modelint <- lmer(interactions ~ Orientation * angM + ang_c * Orientation + display_text_widthS + followers_countS + (1|screen_name), data = analysis, REML = FALSE)
+summary(modelint)
+
+plot_model(modelint, type = "pred", terms = c("ang_c", "Orientation"))
+
+library(reghelper)
+
+simple_slopes(modelint)
+
+```
+
+
+
+```{r}
+library(lmerTest)
+
+modelp <- lmer(positive ~ Orientation + display_text_widthS + followers_countS + (1|screen_name), data = analysis, REML = FALSE)
+model1 <- lmer(interactions ~  pos_c * Orientation + posM + display_text_widthS + followers_countS + (1|screen_name), data = analysis, REML = FALSE)
+
+summary(modelp)
+summary(model1)
+
+```
+
+
+```{r}
+modeln <- lmer(negative ~ Orientation + display_text_widthS + followers_countS + (1|screen_name), data = analysis, REML = FALSE)
+summary(modeln)
+model2 <- lmer(interactions ~ neg_c * Orientation + negM + display_text_widthS + followers_countS + (1|screen_name), data = analysis, REML = FALSE)
+summary(model2)
+
+```
+
+```{r}
+
+detach("package:lmerTest", unload=TRUE)
+library(lme4)
+library(reghelper)
+
+simple_slopes(model2)
+
+
+
+```
+
+```{r}
+
+plot_model(modelp, type = "pred", terms = c("Orientation"), mdrt.values = "meansd")
+plot_model(modeln, type = "pred", terms = c("Orientation"), mdrt.values = "meansd")
+
+
+```
+
+```{r}
+
+plot_model(model1, type = "int", terms = c("pos_c", "Orientation"),mdrt.values = "meansd")
+
+plot_model(model2, type = "int", terms = c("neg_c","Orientation"),mdrt.values = "meansd")
+
+plot_model(model3, type = "pred", terms = c("neg_c", "Orientation"), mdrt.values = "meansd")
+
+```

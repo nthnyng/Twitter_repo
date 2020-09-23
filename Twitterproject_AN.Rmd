@@ -1,0 +1,607 @@
+---
+title: "R Pirate Pals Twitter Project"
+author: "Nathan"
+date: "9/11/2019"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(insight)
+
+modvar <- lmer(interactions ~ positive * Orientation * display_text_width +  (1|screen_name), data = analysis, REML = FALSE)
+summary(modvar)
+
+get_variance(modvar, component = c("all", "fixed", "random", "residual",
+  "distribution", "dispersion", "intercept", "slope", "rho01"),
+  verbose = TRUE)
+
+```
+
+```{r}
+
+library(powerlmm)
+
+```
+
+```{r}
+
+p <- study_parameters(n1 = 2800,
+                      n2 = 6,
+                      icc_pre_subject = .05,
+                      var_ratio =  .000018,
+                      effect_size = cohend(.4, standardizer = "pretest_SD"))
+
+x <- get_power_table(p, n2 = seq(2, 10, by = 1), var_ratio = c(0), effect_size = cohend(c( .1,.2,.3)))
+
+plot(x)
+
+```
+
+```{r}
+
+library(rtweet)
+library(tidyverse)
+library(tidytext)
+library(igraph)
+library(ggraph)
+library(reshape2)
+library(wordcloud)
+
+library(SnowballC)
+library(tm)
+library(syuzhet)
+
+library(relativeVariability)
+
+```
+
+https://www.earthdatascience.org/courses/earth-analytics/get-data-using-apis/text-mining-twitter-data-intro-r/
+
+#Grab tweet booty
+
+```{r}
+
+VLtweets <- get_timeline(c("AlterNet", "democracynow", "thedailybeast", "HuffPost", "theintercept",
+                           "jacobinmag", "motherJones","MSNBC", "NewYorker", "thenation", "Slate", 
+                           "voxdotcom"), n = 3200)
+
+```
+
+```{r}
+
+LLtweets <- get_timeline(c("ABC", "theAtlantic", "buzzfeednews", "CBSNews", "CNN", "TheEconomist",
+                           "guardiannews", "nbcNews", "nytimes", "politico", "TIME", "washingtonpost"), n = 3200)
+
+
+```
+
+```{r}
+
+Centertweets <- get_timeline(c("NPR", "AP", "BBCNews", "csmonitor", "reuters", "thehill", "usatoday", "WSJ", "business", "forbes", "Axios", "businessinsider"), n = 3200)
+
+```
+
+```{r}
+
+LCtweets <- get_timeline(c("reason", "dcexaminer", "WashTimes", "Daily_Press", "foxnewsradio", "MarketWatch", "OANN", "amconmag", "TPostMillennial"), n = 3200)
+
+```
+
+```{r}
+
+VCtweets <- get_timeline(c("BreitbartNews", "NRO", "amspectator", "theblaze", "CBNNews", "DailyCaller", "MailOnline", "realDailyWire", "FDRLST", "nypost", "newsmax"), n = 3200)
+
+```
+
+#remove https
+
+```{r}
+
+# remove http elements manually
+VLtweets$stripped_text <- gsub("http.*","",  VLtweets$text)
+VLtweets$stripped_text <- gsub("https.*","", VLtweets$stripped_text)
+VLtweets$stripped_text <- gsub("#.*","", VLtweets$stripped_text)
+VLtweets$stripped_text <- gsub("@.*","", VLtweets$stripped_text)
+
+LLtweets$stripped_text <- gsub("http.*","",  LLtweets$text)
+LLtweets$stripped_text <- gsub("https.*","", LLtweets$stripped_text)
+LLtweets$stripped_text <- gsub("#.*","", LLtweets$stripped_text)
+LLtweets$stripped_text <- gsub("@.*","", LLtweets$stripped_text)
+
+Centertweets$stripped_text <- gsub("http.*","",  Centertweets$text)
+Centertweets$stripped_text <- gsub("https.*","", Centertweets$stripped_text)
+Centertweets$stripped_text <- gsub("#.*","", Centertweets$stripped_text)
+Centertweets$stripped_text <- gsub("@.*","", Centertweets$stripped_text)
+
+LCtweets$stripped_text <- gsub("http.*","",  LCtweets$text)
+LCtweets$stripped_text <- gsub("https.*","", LCtweets$stripped_text)
+LCtweets$stripped_text <- gsub("#.*","", LCtweets$stripped_text)
+LCtweets$stripped_text <- gsub("@.*","", LCtweets$stripped_text)
+
+VCtweets$stripped_text <- gsub("http.*","",  VCtweets$text)
+VCtweets$stripped_text <- gsub("https.*","", VCtweets$stripped_text)
+VCtweets$stripped_text <- gsub("#.*","", VCtweets$stripped_text)
+VCtweets$stripped_text <- gsub("@.*","", VCtweets$stripped_text)
+
+
+```
+
+
+```{r}
+
+clean_FRtweets <- FRtweets %>%
+  select(stripped_text) %>%
+  unnest_tokens(word, stripped_text)
+
+clean_Libtweets <- Libtweets %>%
+  select(stripped_text) %>%
+  unnest_tokens(word, stripped_text)
+```
+
+```{r}
+
+clean_FRtweets_words <- clean_FRtweets %>%
+  anti_join(stop_words)
+
+clean_Libtweets_words <- clean_Libtweets %>%
+  anti_join(stop_words)
+
+```
+
+```{r}
+
+clean_FRtweets_words %>%
+  count(word, sort = TRUE) %>%
+  top_n(25) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(x = word, y = n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+      labs(y = "Count",
+      x = "Unique words",
+      title = "Count of unique words found in tweets",
+      subtitle = "Stop words removed from the list")
+
+```
+
+```{r}
+
+clean_Libtweets_words %>%
+  count(word, sort = TRUE) %>%
+  top_n(25) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(x = word, y = n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+      labs(y = "Count",
+      x = "Unique words",
+      title = "Count of unique words found in tweets",
+      subtitle = "Stop words removed from the list")
+
+```
+
+```{r}
+
+clean_FRtweets_paired_words <- FRtweets %>% 
+  select(stripped_text) %>%
+  unnest_tokens(paired_words, stripped_text, token ="ngrams", n = 2)
+
+clean_FRtweets_paired_words %>%
+  count(paired_words, sort = TRUE)
+
+clean_Libtweets_paired_words <- Libtweets %>% 
+  select(stripped_text) %>%
+  unnest_tokens(paired_words, stripped_text, token ="ngrams", n = 2)
+
+clean_Libtweets_paired_words %>%
+  count(paired_words, sort = TRUE)
+
+```
+
+
+```{r}
+
+clean_FRtweets_separated_words <- clean_FRtweets_paired_words %>% 
+  separate(paired_words, c("word1", "word2"), sep = " ")
+
+clean_FRtweets_filtered <- clean_FRtweets_separated_words %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word)
+  
+clean_FRtweets_pf_counts <- clean_FRtweets_filtered %>%
+  count(word1, word2, sort = TRUE)
+
+
+clean_Libtweets_separated_words <- clean_Libtweets_paired_words %>%
+  separate(paired_words, c("word1", "word2"), sep = " ")
+
+clean_Libtweets_filtered <- clean_Libtweets_separated_words %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word)
+
+clean_Libtweets_pf_counts <- clean_Libtweets_filtered %>%
+  count(word1, word2, sort = TRUE)
+
+```
+
+
+```{r}
+
+clean_FRtweets_pf_counts %>%
+        filter(n >= 40) %>%
+        graph_from_data_frame() %>%
+        ggraph(layout = "fr") +
+        # geom_edge_link(aes(edge_alpha = n, edge_width = n))
+        # geom_edge_link(aes(edge_alpha = n, edge_width = n)) +
+        geom_node_point(color = "darkslategray4", size = 3) +
+        geom_node_text(aes(label = name), vjust = 1.8, size = 3) +
+        labs(title = "Word Network: Tweets of Conservative News",
+             subtitle = "Text mining twitter data ",
+             x = "", y = "")
+
+```
+
+
+```{r}
+
+clean_Libtweets_pf_counts %>%
+        filter(n >= 40) %>%
+        graph_from_data_frame() %>%
+        ggraph(layout = "fr") +
+        # geom_edge_link(aes(edge_alpha = n, edge_width = n))
+        # geom_edge_link(aes(edge_alpha = n, edge_width = n)) +
+        geom_node_point(color = "darkslategray4", size = 3) +
+        geom_node_text(aes(label = name), vjust = 1.8, size = 3) +
+        labs(title = "Word Network: Tweets of Liberal News",
+             subtitle = "Text mining twitter data ",
+             x = "", y = "")
+
+```
+
+
+
+```{r}
+
+clean_FRtweets_words %>%
+  count(word,sort = T) %>%
+  with( wordcloud(word, n, max.word=100))
+
+
+clean_Libtweets_words %>%
+  count(word,sort = T) %>%
+  with( wordcloud(word, n, max.word=100))
+
+SOUs <- bind_rows(
+  mutate(
+    clean_FRtweets_words, Orientation="Right"
+    ),
+  mutate(
+    clean_Libtweets_words, Orientation="Left"
+  )
+)
+```
+
+sentiment analysis
+
+```{r}
+
+VLtweets %>%
+  select(stripped_text, screen_name, favorite_count, retweet_count, followers_count, display_text_width, created_at, is_retweet) -> Str_VLtweets
+
+LLtweets %>%
+  select(stripped_text, screen_name, favorite_count, retweet_count, followers_count, display_text_width, created_at, is_retweet) -> Str_LLtweets
+
+Centertweets %>%
+  select(stripped_text, screen_name, favorite_count, retweet_count, followers_count, display_text_width, created_at, is_retweet) -> Str_Centweets
+
+LCtweets %>%
+  select(stripped_text, screen_name, favorite_count, retweet_count, followers_count, display_text_width, created_at, is_retweet) -> Str_LCtweets
+
+VCtweets %>%
+  select(stripped_text, screen_name, favorite_count, retweet_count, followers_count, display_text_width, created_at, is_retweet) -> Str_VCtweets
+
+
+```
+
+```{r}
+
+word.VL <- as.vector(Str_VLtweets$stripped_text)
+
+word.LL <- as.vector(Str_LLtweets$stripped_text)
+
+word.C <- as.vector(Str_Centweets$stripped_text)
+
+word.LC <- as.vector(Str_LCtweets$stripped_text)
+
+word.VC <- as.vector(Str_VCtweets$stripped_text)
+
+```
+
+```{r}
+
+emotionVL <- get_nrc_sentiment(word.VL)
+
+emoitonLL <- get_nrc_sentiment(word.LL)
+
+emotionC <- get_nrc_sentiment(word.C)
+
+emotionLC <- get_nrc_sentiment(word.LC)
+
+emoitonVC <- get_nrc_sentiment(word.VC)
+```
+
+```{r}
+
+
+sentVL <- cbind(Str_VLtweets, emotionVL)
+
+sentVL %>%
+  mutate(num = row_number()) -> sentVL
+
+sentLL <- cbind(Str_LLtweets, emoitonLL)
+
+sentLL %>%
+  mutate(num = row_number()) -> sentLL
+
+sentC <- cbind(Str_Centweets, emotionC)
+
+sentC %>%
+  mutate(num = row_number()) -> sentC
+
+sentLC <- cbind(Str_LCtweets, emotionLC)
+
+sentLC %>%
+  mutate(num = row_number()) -> sentLC
+
+sentVC <- cbind(Str_VCtweets, emoitonVC)
+
+sentVC %>%
+  mutate(num = row_number()) -> sentVC
+```
+
+```{r}
+
+ALLTs <- bind_rows(
+  mutate(
+    sentVL, Orientation="VL"
+    ),
+  mutate(
+    sentLL, Orientation="LL"
+  ),
+  mutate(
+    sentC, Orientation="C"
+  ),
+  mutate(
+    sentLC, Orientation="LC"
+  ),
+  mutate(
+    sentVC, Orientation="VC"
+  )
+)
+
+```
+
+```{r}
+
+ALLTs %>%
+  mutate(sent_value = get_sentiment(stripped_text)) -> ALLTs
+
+```
+
+```{r}
+
+write_csv(ALLTs, "NewsTwitterData.csv")
+
+```
+
+```{r}
+
+max(ALLTs$positive)
+min(ALLTs$positive)
+
+mean(ALLTs$positive)
+sd(SOUs$positive)
+```
+
+```{r}
+
+SOUs %>%
+  group_by(Orientation) %>%
+  mutate(sentiment_ave = mean(sent_value)) %>%
+  mutate(sentiment_var = relativeSD(sent_value, -7.15, 7.4)) %>%
+  mutate(pos_ave = mean(positive)) %>%
+  mutate(pos_var = relativeSD(positive, 0, 9)) %>%
+  mutate(neg_ave = mean(negative)) %>%
+  mutate(neg_var = relativeSD(negative, 0, 9)) %>%
+  ungroup() %>%
+  mutate(affectcategory = ifelse(sent_value < -.1, "Negative", ifelse(sent_value > .1, "Positive", "Neutral")))%>%
+  mutate(interactions = retweet_count + favorite_count) -> Sent_media
+
+
+Sent_media$Orientation <- as.factor(Sent_media$Orientation)
+```
+
+```{r}
+
+Sent_media %>%
+  filter(affectcategory != "Neutral") %>%
+  ggplot(mapping = aes(x = positive, y = screen_name, color = Orientation)) + 
+  geom_jitter()
+
+```
+
+```{r}
+
+library(lmerTest)
+
+```
+
+```{r}
+
+library(lme4)
+
+```
+
+```{r}
+
+library(sjPlot)
+
+library(multilevel)
+library(sjmisc)
+library(MuMIn)
+library(arm)
+
+```
+
+```{r}
+
+Sent_media <- read_csv("NewsOrgdata10142019.csv")
+
+```
+
+```{r}
+Sent_media %>%
+  mutate(affect = positive + negative) %>%
+  filter(affect != 0) %>%
+  group_by(Orientation) %>%
+  mutate(sentiment_ave = mean(sent_value)) %>%
+  mutate(sentiment_var = relativeSD(sent_value, -7.15, 7.4)) %>%
+  mutate(pos_ave = mean(positive)) %>%
+  mutate(pos_var = relativeSD(positive, 0, 9)) %>%
+  mutate(neg_ave = mean(negative)) %>%
+  mutate(neg_var = relativeSD(negative, 0, 9)) %>%
+  ungroup() -> analysis
+```
+
+```{r}
+
+write.csv(Sent_media, file = "NewsOrgdata10142019.csv")
+
+```
+
+```{r}
+
+tweetdata <- read_csv("NewsTwitterData.csv")
+
+```
+
+```{r}
+
+Sent_media %>%
+  filter(stripped_text != ".") %>%
+  filter(stripped_text != "") %>%
+  filter(stripped_text != "NA") %>%
+  group_by(screen_name) %>%
+  mutate(totaltweets = max((num))-3200) -> Sent_media
+
+Sent_media %>%
+  select(screen_name, totaltweets) %>%
+  unique() -> numtweets
+
+mean(numtweets$totaltweets)
+sd(numtweets$totaltweets)
+
+```
+```{r}
+
+tweetdata %>%
+  mutate(interactions = favorite_count + retweet_count) -> tweetdata
+
+```
+
+```{r}
+modelID <- aov(interactions ~ as.factor(screen_name), data = analysis)
+
+```
+
+```{r}
+ICC1(modelID)
+
+```
+
+```{r}
+
+analysis %>%
+  group_by(screen_name) %>%
+  mutate(angerM = mean(anger)) %>%
+  mutate(anger_c = anger - angerM) %>%
+  mutate(posM = mean(positive)) %>%
+  mutate(pos_c = positive - posM) %>%
+  mutate(negM = mean(negative)) %>%
+  mutate(neg_c = negative - negM) %>%
+  ungroup %>%
+  mutate(followers_countS = scale(followers_count)) %>%
+  mutate(display_text_widthS = scale(display_text_width))-> analysis
+```
+
+```{r}
+
+
+modelanger <- lmer(anger_c ~ Orientation + display_text_widthS + (1|screen_name), data = analysis, REML = FALSE)
+modelianger <- lmer(interactions ~  anger_c * Orientation + angerM + display_text_widthS + followers_countS + (1|screen_name), data = analysis, REML = FALSE)
+
+summary(modelanger)
+summary(modelianger)
+
+```
+
+```{r}
+
+plot_model(modelianger, type = "pred", terms = c("anger_c", "Orientation"), mdrt.values = "meansd")
+
+library(lme4)
+library(reghelper)
+simple_slopes(modelianger)
+
+```
+
+```{r}
+
+modelp <- lmer(pos_c ~ Orientation + display_text_width + (1|screen_name), data = analysis, REML = FALSE)
+model1 <- lmer(interactions ~  pos_c * Orientation + posM + display_text_width + scale(followers_count) + (1|screen_name), data = analysis, REML = FALSE)
+
+summary(modelp)
+summary(model1)
+
+```
+
+
+```{r}
+modeln <- lmer(neg_c ~ Orientation + display_text_width + (1|screen_name), data = analysis, REML = FALSE)
+summary(modeln)
+model2 <- lmer(interactions ~ neg_c * Orientation + negM + display_text_width + scale(followers_count) + (1|screen_name), data = analysis, REML = FALSE)
+summary(model2)
+
+```
+
+```{r}
+
+model3 <- lmer(interactions ~ Orientation * pos_c + neg_c * Orientation + display_text_width + scale(followers_count) + posM + negM + (1|screen_name), data = analysis, REML = FALSE)
+summary(model3)
+
+
+```
+
+```{r}
+
+plot_model(modelp, type = "pred", terms = c("Orientation"), mdrt.values = "meansd")
+plot_model(modeln, type = "pred", terms = c("Orientation"), mdrt.values = "meansd")
+
+
+```
+
+```{r}
+
+plot_model(model1, type = "int", terms = c("pos_c", "Orientation"),mdrt.values = "meansd")
+
+plot_model(model2, type = "int", terms = c("neg_c","Orientation"),mdrt.values = "meansd")
+
+plot_model(model3, type = "pred", terms = c("neg_c", "Orientation"), mdrt.values = "meansd")
+
+```
