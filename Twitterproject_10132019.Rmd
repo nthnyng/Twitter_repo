@@ -9,6 +9,8 @@ output: word_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+# Twitter Analysis
+
 ```{r}
 
 library(powerlmm)
@@ -353,15 +355,15 @@ ALLTs <- bind_rows(
   )
 )
 
-write_csv(ALLTs, "L_R_tweettext_429.csv")
+write_csv(ALLTs, "L_R_tweettext_429.csv") # OLD DATA
 ```
 
 ```{r}
 
 #syuhzuet sentiment data
-ALLTs <- read_csv("L_R_tweettext_429.csv")
+ALLTs <- read_csv("L_R_tweettext_429.csv") #OLD SYUHZUET DATA
 
-vader <- read_csv("vader.csv")
+vader <- read_csv("vader.csv") #THIS IS THE VADAR DATA
 
 ```
 
@@ -441,30 +443,10 @@ library(ggstatsplot)
 ```
 
 ```{r}
-
-Sent_mediaO <- read_csv("NewsOrgdata10142019.csv")
-senti <- read_csv("result2.csv")
-Sent_media2 <- read_csv("NewsOrgdata10142019_vadardata.csv")
-
-```
-
-
-
-```{r}
-
-#VADER 
-
-```
-
-```{r}
-
-write.csv(Sent_media, file = "NewsOrgdata10142019.csv")
-
-```
-
-```{r}
-
-tweetdata <- read_csv("NewsTwitterData.csv")
+#old files
+#Sent_mediaO <- read_csv("NewsOrgdata10142019.csv")
+#senti <- read_csv("result2.csv")
+#Sent_media2 <- read_csv("NewsOrgdata10142019_vadardata.csv")
 
 ```
 
@@ -488,9 +470,9 @@ Sent_media2 %>%
 
 
 ```{r}
-write_csv(Sent_media2, "saved_text.csv")
+#write_csv(Sent_media2, "saved_text.csv")
 
-Sent_media2 <- read_csv("saved_text.csv")
+Sent_media2 <- read_csv("saved_text.csv") #THIS IS THE DATA
 
 Sent_media2 %>%
   select(stripped_text) -> text
@@ -632,6 +614,17 @@ summz %>%
 t.test(analysis$negative ~ analysis$Orientation)
 ```
 
+```{r}
+analysis %>%
+  group_by(Orientation) %>%
+  mutate(n = n())%>%
+  summarise(n = n())
+
+76699/63659
+
+```
+
+
 #USE THIS ONE
 ```{r}
 analysis %>%
@@ -759,16 +752,37 @@ net_dat %>%
 
 ```{r}
 
-text_dat$Text <- as.vector(text_dat$Text)
+net_l <- net_left_pos
+net_r <- net_right_pos
 
-text_dat %>% 
+net_l %>%
+  select(Text) -> text_dat_l
+
+net_r %>%
+  select(Text) -> text_dat_r
+
+text_dat_l$Text <- as.vector(text_dat_l$Text)
+text_dat_r$Text <- as.vector(text_dat_r$Text)
+
+
+text_dat_l %>% 
   unnest_tokens(
     input = Text, 
     output = bigram, 
     token = 'ngrams', 
     n = 2
   ) %>% 
-  filter(! is.na(bigram)) -> bigram_words
+  filter(! is.na(bigram)) -> bigram_words_l
+
+
+text_dat_r %>% 
+  unnest_tokens(
+    input = Text, 
+    output = bigram, 
+    token = 'ngrams', 
+    n = 2
+  ) %>% 
+  filter(! is.na(bigram)) -> bigram_words_r
 
 
 ```
@@ -780,13 +794,24 @@ stopwords.df <- tibble(
   word = c(stopwords(kind = 'en'))
 )
 
-bigram_words %>% 
+bigram_words_l %>% 
   separate(col = bigram, into = c('word1', 'word2'), sep = ' ') %>% 
   filter(! word1 %in% stopwords.df$word) %>% 
   filter(! word2 %in% stopwords.df$word) %>% 
   filter(! is.na(word1)) %>% 
-  filter(! is.na(word2)) -> bigram_words
+  filter(! is.na(word2)) -> bigram_words_l
+
+bigram_words_r %>% 
+  separate(col = bigram, into = c('word1', 'word2'), sep = ' ') %>% 
+  filter(! word1 %in% stopwords.df$word) %>% 
+  filter(! word2 %in% stopwords.df$word) %>% 
+  filter(! is.na(word1)) %>% 
+  filter(! is.na(word2)) -> bigram_words_r
 ```
+
+
+#Bigram network
+
 
 ```{r}
 #group and count bigrams
@@ -952,11 +977,22 @@ forceNetwork(
   opacityNoHover = 1
 )
 ```
+
 #Skimgram Analysis - allows for a "jump in the word count
+
 ```{r}
 skip.window <- 2
 
-skip.gram.words <- text_dat %>% 
+skip.gram.words_l <- text_dat_l %>% 
+  unnest_tokens(
+    input = Text, 
+    output = skipgram, 
+    token = 'skip_ngrams', 
+    n = skip.window
+  ) %>% 
+  filter(! is.na(skipgram))
+
+skip.gram.words_r <- text_dat_r %>% 
   unnest_tokens(
     input = Text, 
     output = skipgram, 
@@ -969,59 +1005,124 @@ skip.gram.words <- text_dat %>%
 
 ```{r}
 #count the skipgrams
-skip.gram.words$num_words <- skip.gram.words$skipgram %>% 
+#left
+skip.gram.words_l$num_words <- skip.gram.words_l$skipgram %>% 
   map_int(.f = ~ ngram::wordcount(.x))
 
-skip.gram.words %<>% filter(num_words == 2) %>% select(- num_words)
+skip.gram.words_l %<>% filter(num_words == 2) %>% select(- num_words)
 
-skip.gram.words %<>% 
+skip.gram.words_l %<>% 
   separate(col = skipgram, into = c('word1', 'word2'), sep = ' ') %>% 
   filter(! word1 %in% stopwords.df$word) %>% 
   filter(! word2 %in% stopwords.df$word) %>% 
   filter(! is.na(word1)) %>% 
   filter(! is.na(word2)) 
 
-skip.gram.count <- skip.gram.words  %>% 
+skip.gram.count_l <- skip.gram.words_l  %>% 
   count(word1, word2, sort = TRUE) %>% 
   rename(weight = n)
 
-skip.gram.count %>% head()
+skip.gram.count_l %>% head(50)
+
+#right
+skip.gram.words_r$num_words <- skip.gram.words_r$skipgram %>% 
+  map_int(.f = ~ ngram::wordcount(.x))
+
+skip.gram.words_r %<>% filter(num_words == 2) %>% select(- num_words)
+
+skip.gram.words_r %<>% 
+  separate(col = skipgram, into = c('word1', 'word2'), sep = ' ') %>% 
+  filter(! word1 %in% stopwords.df$word) %>% 
+  filter(! word2 %in% stopwords.df$word) %>% 
+  filter(! is.na(word1)) %>% 
+  filter(! is.na(word2)) 
+
+skip.gram.count_r <- skip.gram.words_r  %>% 
+  count(word1, word2, sort = TRUE) %>% 
+  rename(weight = n)
+
+skip.gram.count_r %>% head(50)
 ```
 
 ```{r}
 #visualize skipgrams
 # Treshold
-threshold <- 10
+threshold <- 45
 
-network <-  skip.gram.count %>%
+network_l <-  skip.gram.count_l %>%
   filter(weight > threshold) %>%
   graph_from_data_frame(directed = FALSE)
 
 # Select biggest connected component.  
-V(network)$cluster <- clusters(graph = network)$membership
+V(network_l)$cluster <- clusters(graph = network_l)$membership
 
-cc.network <- induced_subgraph(
-  graph = network,
-  vids = which(V(network)$cluster == which.max(clusters(graph = network)$csize))
+cc.network_l <- induced_subgraph(
+  graph = network_l,
+  vids = which(V(network_l)$cluster == which.max(clusters(graph = network_l)$csize))
 )
 
 # Store the degree.
-V(cc.network)$degree <- strength(graph = cc.network)
+V(cc.network_l)$degree <- strength(graph = cc.network_l)
 # Compute the weight shares.
-E(cc.network)$width <- E(cc.network)$weight/max(E(cc.network)$weight)
+E(cc.network_l)$width <- E(cc.network_l)$weight/max(E(cc.network_l)$weight)
 
 # Create networkD3 object.
-network.D3 <- igraph_to_networkD3(g = cc.network)
+network.D3_l <- igraph_to_networkD3(g = cc.network_l)
 # Define node size.
-network.D3$nodes %<>% mutate(Degree = (1E-2)*V(cc.network)$degree)
+network.D3_l$nodes %<>% mutate(Degree = (1E-2)*V(cc.network_l)$degree)
 # Degine color group (I will explore this feature later).
-network.D3$nodes %<>% mutate(Group = 1)
+network.D3_l$nodes %<>% mutate(Group = 1)
 # Define edges width. 
-network.D3$links$Width <- 10*E(cc.network)$width
+network.D3_l$links$Width <- 10*E(cc.network_l)$width
 
 forceNetwork(
-  Links = network.D3$links, 
-  Nodes = network.D3$nodes, 
+  Links = network.D3_l$links, 
+  Nodes = network.D3_l$nodes, 
+  Source = 'source', 
+  Target = 'target',
+  NodeID = 'name',
+  Group = 'Group', 
+  opacity = 0.9,
+  Value = 'Width',
+  Nodesize = 'Degree', 
+  # We input a JavaScript function.
+  linkWidth = JS("function(d) { return Math.sqrt(d.value); }"), 
+  fontSize = 12,
+  zoom = TRUE, 
+  opacityNoHover = 1
+)
+
+threshold <- 35
+
+network_r <-  skip.gram.count_r %>%
+  filter(weight > threshold) %>%
+  graph_from_data_frame(directed = FALSE)
+
+# Select biggest connected component.  
+V(network_r)$cluster <- clusters(graph = network_r)$membership
+
+cc.network_r <- induced_subgraph(
+  graph = network_r,
+  vids = which(V(network_r)$cluster == which.max(clusters(graph = network_r)$csize))
+)
+
+# Store the degree.
+V(cc.network_r)$degree <- strength(graph = cc.network_r)
+# Compute the weight shares.
+E(cc.network_r)$width <- E(cc.network_r)$weight/max(E(cc.network_r)$weight)
+
+# Create networkD3 object.
+network.D3_r <- igraph_to_networkD3(g = cc.network_r)
+# Define node size.
+network.D3_r$nodes %<>% mutate(Degree = (1E-2)*V(cc.network_r)$degree)
+# Degine color group (I will explore this feature later).
+network.D3_r$nodes %<>% mutate(Group = 1)
+# Define edges width. 
+network.D3_r$links$Width <- 10*E(cc.network_r)$width
+
+forceNetwork(
+  Links = network.D3_r$links, 
+  Nodes = network.D3_r$nodes, 
   Source = 'source', 
   Target = 'target',
   NodeID = 'name',
@@ -1049,50 +1150,92 @@ forceNetwork(
 
 
 # Compute the centrality measures for the biggest connected component from above.
-node.impo.df <- tibble(
-  word = V(cc.network)$name,  
-  degree = strength(graph = cc.network),
-  closeness = closeness(graph = cc.network), 
-  betweenness = betweenness(graph = cc.network)
+node.impo.df_l <- tibble(
+  word = V(cc.network_l)$name,  
+  degree = strength(graph = cc.network_l),
+  closeness = closeness(graph = cc.network_l), 
+  betweenness = betweenness(graph = cc.network_l)
+)
+
+node.impo.df_r <- tibble(
+  word = V(cc.network_r)$name,  
+  degree = strength(graph = cc.network_r),
+  closeness = closeness(graph = cc.network_r), 
+  betweenness = betweenness(graph = cc.network_r)
 )
 ```
 
 ```{r}
 #rank nodes based on the centrality measures
-node.impo.df %>% 
+node.impo.df_l %>% 
   arrange(- degree) %>%
   head(10)
 
-node.impo.df %>% 
+node.impo.df_l %>% 
   arrange(- closeness) %>%
   head(10)
 
-node.impo.df %>% 
+node.impo.df_l %>% 
+  arrange(- betweenness) %>% 
+  head(10)
+
+node.impo.df_r %>% 
+  arrange(- degree) %>%
+  head(10)
+
+node.impo.df_r %>% 
+  arrange(- closeness) %>%
+  head(10)
+
+node.impo.df_r %>% 
   arrange(- betweenness) %>% 
   head(10)
 ```
 
 ```{r}
 #visualize the centrality measures
-plt.deg <- node.impo.df %>% 
+plt.deg_l <- node.impo.df_l %>% 
   ggplot(mapping = aes(x = degree)) +
     theme_light() +
     geom_histogram(fill = 'blue', alpha = 0.8, bins = 30)
 
-plt.clo <- node.impo.df %>% 
+plt.clo_l <- node.impo.df_l %>% 
   ggplot(mapping = aes(x = closeness)) +
     theme_light() +
     geom_histogram(fill = 'red', alpha = 0.8, bins = 30)
 
-plt.bet <- node.impo.df %>% 
+plt.bet_l <- node.impo.df_l %>% 
   ggplot(mapping = aes(x = betweenness)) +
     theme_light() +
     geom_histogram(fill = 'green4', alpha = 0.8, bins = 30)
 
 plot_grid(
-  ... = plt.deg, 
-  plt.clo, 
-  plt.bet, 
+  ... = plt.deg_l, 
+  plt.clo_l, 
+  plt.bet_l, 
+  ncol = 1, 
+  align = 'v'
+)
+
+plt.deg_r <- node.impo.df_r %>% 
+  ggplot(mapping = aes(x = degree)) +
+    theme_light() +
+    geom_histogram(fill = 'blue', alpha = 0.8, bins = 30)
+
+plt.clo_r <- node.impo.df_r %>% 
+  ggplot(mapping = aes(x = closeness)) +
+    theme_light() +
+    geom_histogram(fill = 'red', alpha = 0.8, bins = 30)
+
+plt.bet_r <- node.impo.df_r %>% 
+  ggplot(mapping = aes(x = betweenness)) +
+    theme_light() +
+    geom_histogram(fill = 'green4', alpha = 0.8, bins = 30)
+
+plot_grid(
+  ... = plt.deg_r, 
+  plt.clo_r, 
+  plt.bet_r, 
   ncol = 1, 
   align = 'v'
 )
@@ -1101,12 +1244,19 @@ plot_grid(
 ```{r}
 #identify clusters using Louvain Method for community detection:
 
-comm.det.obj <- cluster_louvain(
-  graph = cc.network, 
-  weights = E(cc.network)$weight
+comm.det.obj_l <- cluster_louvain(
+  graph = cc.network_l, 
+  weights = E(cc.network_l)$weight
 )
 
-comm.det.obj
+comm.det.obj_l
+
+comm.det.obj_r <- cluster_louvain(
+  graph = cc.network_r, 
+  weights = E(cc.network_r)$weight
+)
+
+comm.det.obj_r
 
 #7 groups or "clusters" were identified. 
 #mod (modularity) - is .75 which is good (closer to 1 is better)
@@ -1115,14 +1265,36 @@ comm.det.obj
 
 ```{r}
 #Now we encode the membership as a node atribute (zoom and click on each node to explore the clusters).
-V(cc.network)$membership <- membership(comm.det.obj)
+V(cc.network_l)$membership <- membership(comm.det.obj_l)
 
 # We use the membership label to color the nodes.
-network.D3$nodes$Group <- V(cc.network)$membership
+network.D3_l$nodes$Group <- V(cc.network_l)$membership
 
 forceNetwork(
-  Links = network.D3$links, 
-  Nodes = network.D3$nodes, 
+  Links = network.D3_l$links, 
+  Nodes = network.D3_l$nodes, 
+  Source = 'source', 
+  Target = 'target',
+  NodeID = 'name',
+  Group = 'Group', 
+  opacity = 0.9,
+  Value = 'Width',
+  Nodesize = 'Degree', 
+  # We input a JavaScript function.
+  linkWidth = JS("function(d) { return Math.sqrt(d.value); }"), 
+  fontSize = 12,
+  zoom = TRUE, 
+  opacityNoHover = 1
+)
+
+V(cc.network_r)$membership <- membership(comm.det.obj_r)
+
+# We use the membership label to color the nodes.
+network.D3_r$nodes$Group <- V(cc.network_r)$membership
+
+forceNetwork(
+  Links = network.D3_r$links, 
+  Nodes = network.D3_r$nodes, 
   Source = 'source', 
   Target = 'target',
   NodeID = 'name',
@@ -1140,17 +1312,36 @@ forceNetwork(
 
 ```{r}
 #Collect the words per cluster:
-membership.df <- tibble(
-  word = V(cc.network) %>% names(),
-  cluster = V(cc.network)$membership
+membership.df_l <- tibble(
+  word = V(cc.network_l) %>% names(),
+  cluster = V(cc.network_l)$membership
 )
 
-V(cc.network)$membership %>%
+V(cc.network_l)$membership %>%
   unique %>% 
   sort %>% 
   map_chr(.f = function(cluster.id) {
     
-    membership.df %>% 
+    membership.df_l %>% 
+      filter(cluster == cluster.id) %>% 
+      # Get 15 at most 15 words per cluster.
+      slice(1:15) %>% 
+      pull(word) %>% 
+      str_c(collapse = ', ')
+    
+  }) 
+
+membership.df_r <- tibble(
+  word = V(cc.network_r) %>% names(),
+  cluster = V(cc.network_r)$membership
+)
+
+V(cc.network_r)$membership %>%
+  unique %>% 
+  sort %>% 
+  map_chr(.f = function(cluster.id) {
+    
+    membership.df_r %>% 
       filter(cluster == cluster.id) %>% 
       # Get 15 at most 15 words per cluster.
       slice(1:15) %>% 
